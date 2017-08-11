@@ -1,6 +1,3 @@
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-    }
-}
+mod test_result;
+
+pub use test_result::TestResult;
