@@ -5,3 +5,4 @@ authors = ["Janito Vaqueiro Ferreira Filho <janito.vff@gmail.com>"]
 
 [dependencies]
 futures = "0.1"
+termion = "1.5"
