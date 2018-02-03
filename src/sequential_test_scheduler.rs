@@ -1,61 +1,57 @@
 use std::collections::VecDeque;
 
 use futures::{Async, Poll, Stream};
-use super::into_test::IntoTest;
 use super::test::Test;
+use super::test_fixture::TestFixture;
 use super::test_result::{TestResult, TestResultMethods};
-use super::test_spawner::TestSpawner;
 
-pub struct SequentialTestScheduler<S>
+pub struct SequentialTestScheduler<F>
 where
-    S: TestSpawner,
+    F: TestFixture,
 {
-    spawner: S,
-    test_queue: VecDeque<Box<FnMut(&mut S::TestSetup)>>,
-    test_execution: Option<<S::TestSetup as IntoTest>::Test>,
+    fixture: F,
+    test_queue: VecDeque<F::TestSpec>,
+    test_execution: Option<F::Test>,
 }
 
-impl<S> SequentialTestScheduler<S>
+impl<F> SequentialTestScheduler<F>
 where
-    S: TestSpawner,
+    F: TestFixture,
 {
-    pub fn new(spawner: S) -> Self {
+    pub fn new(fixture: F) -> Self {
         Self {
-            spawner,
+            fixture,
             test_queue: VecDeque::new(),
             test_execution: None,
         }
     }
 
-    pub fn add<F>(&mut self, test_setup: F)
+    pub fn add<S>(&mut self, test_spec: S)
     where
-        F: Into<Box<FnMut(&mut S::TestSetup)>>,
+        S: Into<F::TestSpec>,
     {
-        self.test_queue.push_back(test_setup.into());
+        self.test_queue.push_back(test_spec.into());
     }
 
-    pub fn add_all<F, I>(&mut self, test_setup_functions: I)
+    pub fn add_all<S, I>(&mut self, test_specs: I)
     where
-        F: Into<Box<FnMut(&mut S::TestSetup)>>,
-        I: IntoIterator<Item = F>,
+        S: Into<F::TestSpec>,
+        I: IntoIterator<Item = S>,
     {
-        let mut new_tests = test_setup_functions
-            .into_iter()
-            .map(|test| test.into())
-            .collect();
+        let test_specs = test_specs.into_iter();
+        let (minimum_specs, _maximum_specs) = test_specs.size_hint();
 
-        self.test_queue.append(&mut new_tests)
+        self.test_queue.reserve(minimum_specs);
+
+        for test_spec in test_specs {
+            self.test_queue.push_back(test_spec.into());
+        }
     }
 
     fn start_next_test(&mut self) {
-        self.test_execution =
-            self.test_queue.pop_front().map(|mut test_setup_function| {
-                let mut test_setup = self.spawner.spawn();
-
-                test_setup_function(&mut test_setup);
-
-                test_setup.into_test()
-            });
+        if let Some(test_spec) = self.test_queue.pop_front() {
+            self.test_execution = Some(self.fixture.start(test_spec));
+        }
     }
 
     fn all_tests_finished(&self) -> bool {
@@ -63,11 +59,11 @@ where
     }
 }
 
-impl<S> Stream for SequentialTestScheduler<S>
+impl<F> Stream for SequentialTestScheduler<F>
 where
-    S: TestSpawner,
+    F: TestFixture,
 {
-    type Item = TestResult<<<S::TestSetup as IntoTest>::Test as Test>::Error>;
+    type Item = TestResult<<F::Test as Test>::Error>;
     type Error = ();
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {

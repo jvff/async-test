@@ -1,57 +1,54 @@
 use futures::{Async, Poll, Stream};
-use super::into_test::IntoTest;
 use super::test::Test;
+use super::test_fixture::TestFixture;
 use super::test_result::{TestResult, TestResultMethods};
-use super::test_spawner::TestSpawner;
 
-pub struct ParallelTestScheduler<S>
+pub struct ParallelTestScheduler<F>
 where
-    S: TestSpawner,
+    F: TestFixture,
 {
-    spawner: S,
-    test_queue: Vec<Box<FnMut(&mut S::TestSetup)>>,
-    test_executions: Vec<<S::TestSetup as IntoTest>::Test>,
+    fixture: F,
+    test_queue: Vec<F::TestSpec>,
+    test_executions: Vec<F::Test>,
 }
 
-impl<S> ParallelTestScheduler<S>
+impl<F> ParallelTestScheduler<F>
 where
-    S: TestSpawner,
+    F: TestFixture,
 {
-    pub fn new(spawner: S) -> Self {
+    pub fn new(fixture: F) -> Self {
         Self {
-            spawner,
+            fixture,
             test_queue: Vec::new(),
             test_executions: Vec::new(),
         }
     }
 
-    pub fn add<F>(&mut self, test_setup: F)
+    pub fn add<S>(&mut self, test_spec: S)
     where
-        F: Into<Box<FnMut(&mut S::TestSetup)>>,
+        S: Into<F::TestSpec>,
     {
-        self.test_queue.push(test_setup.into());
+        self.test_queue.push(test_spec.into());
     }
 
-    pub fn add_all<F, I>(&mut self, test_setup_functions: I)
+    pub fn add_all<S, I>(&mut self, test_specs: I)
     where
-        F: Into<Box<FnMut(&mut S::TestSetup)>>,
-        I: IntoIterator<Item = F>,
+        S: Into<F::TestSpec>,
+        I: IntoIterator<Item = S>,
     {
-        let mut new_tests = test_setup_functions
-            .into_iter()
-            .map(|test| test.into())
-            .collect();
+        let test_specs = test_specs.into_iter();
+        let (minimum_specs, _maximum_specs) = test_specs.size_hint();
 
-        self.test_queue.append(&mut new_tests)
+        self.test_queue.reserve(minimum_specs);
+
+        for test_spec in test_specs {
+            self.test_queue.push(test_spec.into());
+        }
     }
 
     fn start_queued_tests(&mut self) {
-        for mut test_setup_function in self.test_queue.drain(0..) {
-            let mut test_setup = self.spawner.spawn();
-
-            test_setup_function(&mut test_setup);
-
-            self.test_executions.push(test_setup.into_test());
+        for test_spec in self.test_queue.drain(0..) {
+            self.test_executions.push(self.fixture.start(test_spec))
         }
     }
 
@@ -83,16 +80,15 @@ where
     }
 }
 
-impl<S> Stream for ParallelTestScheduler<S>
+impl<F> Stream for ParallelTestScheduler<F>
 where
-    S: TestSpawner,
+    F: TestFixture,
 {
-    type Item = TestResult<<<S::TestSetup as IntoTest>::Test as Test>::Error>;
+    type Item = TestResult<<F::Test as Test>::Error>;
     type Error = ();
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         self.start_queued_tests();
-
         self.next_test_result()
     }
 }
