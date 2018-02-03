@@ -1,4 +1,4 @@
-use super::test::IntoTest;
+use super::into_test::IntoTest;
 
 pub trait TestSpawner {
     type TestSetup: IntoTest;

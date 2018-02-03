@@ -1,5 +1,6 @@
 use futures::{Async, Poll, Stream};
-use super::test::{IntoTest, Test};
+use super::into_test::IntoTest;
+use super::test::Test;
 use super::test_result::{TestResult, TestResultMethods};
 use super::test_spawner::TestSpawner;
 
