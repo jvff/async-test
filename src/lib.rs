@@ -1,6 +1,7 @@
 extern crate futures;
 extern crate termion;
 
+mod empty_test_fixture;
 mod future_test_spec;
 mod into_test;
 mod parallel_test_scheduler;
@@ -10,6 +11,7 @@ mod test_reporter;
 mod test_result;
 mod test;
 
+pub use empty_test_fixture::EmptyTestFixture;
 pub use future_test_spec::FutureTestSpec;
 pub use into_test::IntoTest;
 pub use parallel_test_scheduler::ParallelTestScheduler;
